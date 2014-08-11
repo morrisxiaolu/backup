@@ -1,0 +1,648 @@
+\" sb1250e_0_mipsi64/target.ref - SB1250e target specific documentation
+\"
+\" Copyright 2000-2002,2004,2006-2007 Wind River Systems, Inc.
+\"
+\" This file has been developed or significantly modified by the
+\" MIPS Center of Excellence Dedicated Engineering Staff.
+\" This notice is as per the MIPS Center of Excellence Master Partner
+\" Agreement, do not remove this notice without checking first with
+\" WR/Platforms MIPS Center of Excellence engineering management.
+\"
+\" modification history
+\" --------------------
+\" 01f,17oct06,jmt  convert 1250a/e to default to vxWorks not CFE
+\" 01e,22aug06,rlg  Update sibyte cfe support
+\" 01d,25jan06,rlg  SPR 104330 removal / rename of old style naming convention
+\"                  to new style ie Tornado becomes vxWorks
+\" 01c,06jul04,agf  Base 6 conversion to target.ref
+\" 01b,19jul02,pgh  Update rom Deliverables and timer assignments
+\" 01b,25jun02,pgh  Removed references to unused files.
+\" 01a,22apr02,tlc  Add description of deliverable files.
+\" 01d,06mar02,agf  update flash programming instructions
+\" 01c,08dec01,agf  merge README notes
+\" 01b,30nov01,zchenmodified, for swarm board.
+\" 01a,21nov00,an   written.
+\"
+.TH "SB1250e" T "Broadcom SB1250e" "VxWorks Reference Manual"
+
+NAME
+`Broadcom 1250e'
+
+INTRODUCTION
+
+This document provides board-specific changes necessary to run VxWorks on the
+Broadcom BCM91250E boards. Before using a board with VxWorks, verify that the
+board runs in the factory configuration using vendor supplied ROMs and jumper
+and switch settings and checking the RS-232 connection. 
+
+BOOT ROMS
+
+Booting can be done using either the Common Firmware Environment (CFE) or
+the vxWorks bootrom.
+
+\sh Booting vxWorks from CFE without vxWorks bootApp
+VxWorks can be loaded directly by CFE. This method presents a problem of the boot 
+string environment variables (IP address, file location, etc.) being initialized 
+for CFE, but not for vxWorks. Thus the compiled defaults config.h will always be used.
+Insure they are correct for your site set-up. The step-by-step instructions for 
+using CFE are as follows:
+
+
+A minimalist CFE boot session looks like:
+\cs
+CFE> ifconfig -addr=10.10.1.17 eth0
+eth0: Link speed: 100BaseT HDX
+Device eth0:  hwaddr 00-02-4C-FE-08-7E, ipaddr 10.10.1.17, mask not set gateway 
+not set, nameserver not set                   
+*** command status = 0                                        
+CFE> load -elf -addr=80000000 10.10.1.18:/vxWorks
+Loader:elf Filesys:tftp Dev:eth0 File:10.10.1.18:/vxWorks Options:(null)
+Loading: 0xffffffff80020000/1014688 0xffffffff80117ba0/38416 Entry at 0xffffffff
+80020000
+*** command status = 0
+CFE> e 80000700 0
+*** command status = 0
+CFE> go
+Closing network.
+Starting program at 0xfffff
+\ce
+
+
+Note, the CFE console operates at 115200 baud, while the vxWorks console operates at
+9600 baud. After the 'go' command is given, the baud rate of the user's terminal will 
+need to be changed appropriately. Also, the various IP addresses should be changed to
+reflect the actual network the board is connected to. The 'e 80000700 0' command 
+is required to clear the RAM boot string so that the vxWorks kernel will know to 
+read it from the DEFAULT ROM location. For complete details on CFE operation, refer 
+to the "Common Firmware Environment (CFE) Functional Specification". This document 
+is available from Broadcom Corporation.
+
+\sh Booting vxWorks from CFE with vxWorks bootApp (all boards)
+Wind River provides a method for booting vxWorks via the CFE furnished by the vendor.
+This method requires the user build a vxWorks bootApp. The bootApp can be generated
+using the vxprj or workBench facilities and PROFILE_BOOTAPP. For BCM91250A and 
+BCM91250E devices, config.h must be modified to add the #define INCLUDE_CFE_SUPPORT
+and the Makefile must be updated to have a ROM_TEXT_ADRS set to bfe00000.
+INCLUDE_CFE_SUPPORT is the default for the BCM91480B. Once the bootApp has been,
+built, copy the bootApp to a suitable directory accessible from the tftpserver. 
+Note, bootApp should only be built for cpu0. Building a bootApp for cpu1 is an 
+invalid state of operation.
+
+
+The following is an example of how to create a bootApp using vxprj.
+\cs
+cd /wind/river
+vxprj create -profile PROFILE_BOOTAPP sb1xxxx_0_mipsi64 diab
+cd $WIND_BASE/target/proj/sb1xxxx_0_mipsi64_diab
+vxprj build
+\ce
+
+The following are instruction on how to create a bootApp from workBench.
+\cs
+startWorkBench
+create a new project
+select PROFILE_BOOTAPP
+after project creation 
+edit Kernel Configuration
+open the Hardware folder
+open the BSP Configuration Variants folder
+if BCM91250A or BCM91250E
+select Support for CFE Firmware and Include it.
+else  for BCM1480B
+verify Support for CFE Firmware is included
+endif
+build project
+\ce
+
+From CFE, execute the following commands:
+\cs
+CFE> setenv -p STARTUP "ifconfig -addr=10.10.1.17 -mask=255.255.255.0 -gw=10.10.1.1 
+eth0;boot -elf 10.10.1.18:/bootApp"
+CFE> setenv -p vxwbootline "sbe(0,0)hostname:/vxWorks e=10.10.1.17:ffffff00 h=10.10.1.18
+g=10.10.1.1 u=target"
+CFE> setenv -p vxwarmbootline "sbe(0,0)hostname:/vxWorks e=10.10.1.17:ffffff00 
+h=10.10.1.18 g=10.10.1.1 u=target"
+CFE> reset -yes -sysreset
+\ce
+The standard vxWorks countdown screen will now appear. Note, CFE operates at 115200, 
+there is no need to change the baud rate for vxWorks to operate. The -p in the setenv
+command forces the values to be written into NVRAM. Once the operation has been done
+once it doesn't need to be repeated for subsequent power cycle.s. To modify a
+parameter the command unsetenv is used. Then the setenv sequence is redone. 
+
+\sh Booting vxWorks from bootrom.hex (BCM91250A and BCM91250E)
+The preferred method of loading vxWorks is with the vxWorks bootrom.  However, 
+the boards are shipped with CFE burned into flash by default. To use the vxWorks 
+bootrom, it must replace CFE. This can be done by burning the bootrom image into 
+flash directly by using CFE itself. A minimalist flash programming session is 
+shown below, please refer to the CFE Functional Specification for complete details.
+
+
+'Programming flash with CFE'
+
+
+Prior to starting CFE, a binary image of the vxWorks bootrom must be created. This 
+is done by executing the following command in the 
+$WIND_BASE/target/config/sb1250x_0_mipsi64 directory:
+
+\cs
+$ objcopymips -O binary bootrom bootrom.bin
+\ce
+
+
+Next, copy the bootrom.bin file to a suitable directory accessible from the tftpserver. Then, 
+from CFE, execute the following commands:
+\cs
+CFE> ifconfig -addr=10.10.1.17 eth0                         
+eth0: Link speed: 100BaseT HDX
+Device eth0:  hwaddr 00-02-4C-FE-08-7E, ipaddr 10.10.1.17, mask not set gateway
+not set, nameserver not set
+*** command status = 0
+CFE> flash -noheader 10.10.1.18:/bootrom.bin flash0
+Reading 10.10.1.18:/bootrom.bin: Done. 262384 bytes read
+
+
+** DO NOT TURN OFF YOUR MACHINE UNTIL THE FLASH UPDATE COMPLETES!! **
+
+Erasing flash...Programming...done. 262384 bytes written
+*** command status = 0
+CFE> reset -yes -sysreset
+\ce
+
+
+Important: be sure to change the baud rate of the terminal program to 9600 after reseting the
+board. If changed fast enough, the VxWorks boot banner can be seen. Of course one can just 
+cycle the power manually after the baud rate has been changed.
+
+
+'Programming flash with a ROM ICE'
+
+
+An alternate method for using the vxWorks bootrom is to use a ROM in-circuit emulator 
+attached to the "PROM ICE" connector. Load the bootrom.hex file in the ICE following 
+the directions for the particular
+ICE you are using. Install J31 to set the PROM ICE bus as the default bootrom address.
+Power up the Swarm board and follow the boot command loop prompts.
+
+
+Regardless of the boot method used, they all load and start only cpu0. To start cpu1, 
+connect a shell to cpu0, and type 'sysBootSec "<cpu1 kernel>"'. Where <cpu1 kernel>
+represents the path and filename of the kernel image built in the 'sb1xxx_cpu1' BSP 
+directory. If 'sysBootSec' is called without arguments, the routine will use cpu0's 
+filename from the DEFAULT_BOOT_LINE, appended with the character '1'.
+
+
+The run-time kernel for cpu0 can be set to load cpu1's kernel image automatically as
+part of its initialization sequence. Follow the instructions for configuring the
+'USER_APPL_INIT' macro as discussed in the "BSP Developer's Kit for VxWorks".
+
+
+Disclaimer: the directions concerning the use of CFE are believed to be correct
+and have been verified by Wind River on hardware using CFE version 1.3.2. However, 
+Wind River does not guarantee their correctness and does not support the CFE 
+bootloader. For problems related to the use of CFE please contact Broadcom directly.
+
+FEATURES
+
+\sh Supported Features
+The following features of the Swarm board are supported.
+
+\sh CFE versus VxWorks Bootrom Configuration
+The sb1250x BSPs can be booted from either a VxWorks Bootrom or CFE.
+This dichotomy forces specific configuration requirements for the different
+bootrom types.  The sb1250x BSPs are defaulted to operate with a VxWorks 
+Bootrom.  
+
+The following instructions are the mechanism where you can switch to CFE:
+
+1. Edit sb1250x_x_mipsi64/config.h
+2. Search for INCLUDE_CFE_SUPPORT.  Bracketed by (BOARD_TYPE == BCM91250A) 
+3. Change #undef to #define
+4. Save and Exit
+5. Edit Makefile
+6. Search for ROM_TEXT_ADRS
+7. Change bfc00000 to bfe00000
+8. Save and Exit
+9. Clean and Rebuild
+
+In workbench, remove all previously created sb1250x projects and recreate them.
+
+\sh Dual CPU Cores
+The sb1250x has two cpu cores. The sb1480 has four cores, under the present
+scheme only two cores are supported. Due to memory constraints it makes no
+sense to support all 4 cores. Once
+initialized, each core can execute completely independently of the other. 
+This BSP has designed the run-time kernels to exist separately
+in memory and execute without interference to or interference
+from the other. To facilitate this design, the BSP actually 
+consists of two directories, one for each core's run-time kernel.
+sb1xxxx_0_mipsi64 contains all the source code and the RAM address
+definitions for cpu0's run-time kernel. sb1xxxx_1_mipsi64 has symbolic
+links to all the files in sb1xxxx_0_mipsi64, except for the Makefile
+and 'config.h'. These two files contain the RAM addresses which
+constitute the boundaries of memory the kernel will use. By
+specifying boundaries which do not overlap, the kernels can
+co-exist in memory with no other special handling. At present
+time, each kernel is allocated a 16MB partition from main memory.
+The remainder of memory is available for special use by the 
+application developer, or the partitions of one or both kernels
+can be increased. Additionally, I/O resources on the sb1xxx have
+been assigned exclusively to one kernel or the other. This document
+will note which resource has been assigned to which kernel in
+the appropriate section for each resource.
+
+
+To build vxWorks, enter each of the sb1xxx BSP directories and type 'make 
+vxWorks'.  A run-time kernel will be built using the memory addresses
+particular to the cpu on which it should execute. The vxWorks bootrom
+will only execute on cpu0 and thus should only be built from the
+sb1xxxx_0_mipsi64 BSP directory.
+
+
+Cpu0 is responsible for actually loading cpu1's runtime kernel. A 
+special function has been written expressly for this purpose and
+is included in it's kernel. The routine is 'sysBootSec'. It can be called
+from either shell and will load the kernel image for cpu1 from across
+a network and then pass to cpu1 the starting address of the loaded
+kernel. Care must be taken with the default boot line for the cpu1 
+kernel. Since cpu1 does not actually execute the boot kernel, there is
+no opportunity for the user to specify overrides for such things as
+target IP's and MAC device number. The run-time kernel will always
+execute using the compiled-in defaults specified in the config.h file.
+
+\sh VxMP
+The sb1xxxx BSP includes support for VxMP. The shared memory
+region is defined in 'config.h'. Two simple test functions (semTask1
+and semTask2) are included in sysLib.c. These can be called from a
+host or target shell once both the run-time kernels are executing
+to demonstrate basic VxMP support. They will create a shared memory
+semaphore and display diagnostic information as the routines execute.
+
+\sh Serial I/O
+The Swarm board has two serial ports. Uart0 supports the
+vxWorks console for the cpu0 kernel, and Uart1 supports the vxWorks
+console for the cpu1 kernel.
+
+\sh Ethernet
+The sb1250x boards have two ethernet ports. They are connected
+to MAC's 0 and 1 of the sb1250x processor. The MAC devices are referred
+to as 'sbe' in vxWorks. The Cpu0 kernel attaches to MAC 0, ethernet 
+port 0, and cpu1 to MAC 1, ethernet port 1.
+
+The sb1480 board has four ethernet ports. They are connected
+to MAC's 0,1,2 and 3 of the sb1480 processor. The MAC devices are referred
+to as 'sbe' in vxWorks. The Cpu0 kernel attaches to MAC 0, ethernet 
+port 0, cpu1 to MAC 1, ethernet port 1, cpu2 to MAC 2, ethernet port 2, and 
+cpu3 to MAC 3, ethernet port 3.
+
+\sh SDRAM
+The sb1250x board ships with 256MB of DDR SDRAM. A 16 MB partition
+from 0x8000.0000-0x80ff.ffff has been allocated for cpu0's kernel, and 
+a 16 MB partition from 0x8100.0000-0x81ff.ffff has been allocated for cpu1's
+kernel. The remainder is available for application use.
+
+\sh PCI and LDT Bus
+The sb1xxxx board supports 64 bit PCI and also AMD's 
+Lightning Data Transport (LDT). PCI autoconfiguration is supported
+for host mode only. Double hosted LDT chains are properly detected, 
+but the configuration code is suitable only for the master on such chains.
+
+
+For the sb1xxxx, pciAutoConfigLib required modifications for two
+reasons: additional callback hooks to support LDT fabric
+initialization and pass 1 errata related to base/limit registers in
+the LDT host bridge. The modified files are included in the BSP 
+directories. With standard search paths, these will be found before 
+the standard Wind River versions.  The supporting BSP-specific 
+callbacks are in the file 'bcm1250PciLib.{h,c}'. The autoconfiguration 
+code is invoked as part of VxWorks startup.  If it finishes successfully, 
+the LDT fabric will be initialized, bus numbers will be assigned, bridges 
+will be configured, device BARs will be assigned, and device Interrupt 
+Line registers will be initialized to default values.
+
+
+"PCI Interrupt Library:" Wind River supplies a standard library for PCI 
+interrupt handling. The library provides default methods for routing 
+interrupts and attaching handlers for PCI devices. The library assumes 
+that PCI interrupts INTA, INTB, INTC and INTD are sharable.  By default, 
+each of these interrupt sources is serviced by CPU 0 at interrupt level 
+I0 (IP[2]).  See PCI_INT_HANDLER_BIND in sb1.h to change this.
+
+
+Also by default, the AP10ll LDT-to-PCI bridge (Sturgeon) is configured
+to map interrupts from PCI devices on its secondary bus into LDT
+interrupt sources with the same bit number, and the corresponding bit
+vectors are merged by the interrupt mapper.  Thus the INTA, .., INTD
+signals are effectively shared by all PCI devices.  See
+sysPciAutoconfigPostEnumBridgeInit in bcm1250PciLib.c to change this.
+
+
+
+\sh Special Considerations
+This section describes miscellaneous information that the user needs
+to know about the BSP.
+
+
+
+For pass 1 parts, the base and limit registers for the LDT host bridge
+require special adjustment, as noted above.
+
+
+For devices on the Sturgeon's secondary bus, performance of
+bus-mastering devices is substantially improved by enabling prefetch
+across the LDT bus.  See the description of the Sturgeon Read Control
+register for specific options.  By default, prefetch is enabled for
+Read Line and Read Multiple commands, each in non-continuous mode with
+2 lines of prefetch.  To change the initial values of these options, see
+sysPciAutoconfigPostEnumBridgeInit in bcm1250PciLib.c.
+
+
+The LDT interrupt messages generated for PCI devices behind the
+Sturgeon are mapped specifying Edge Trigger Mode.  Interrupt requests
+from those devices are accumulated in the interrupt mapper.  They are
+cleared in the mapper's state just before invoking the corresponding
+chain of handlers.  The requests will be set only by subsequent
+transitions of the device interrupts to their active states.  Thus the
+corresponding handlers cannot assume that an unserviced interrupt
+condition will continue to signal an interrupt.
+
+
+The autoconfiguration algorithm assigns values to the Interrupt Line
+register of each device according to the actual wiring for on-board
+devices and slots.  It uses the standard rotation algorithm for
+off-board bridges.  The assigned values are the SB-1250 source numbers
+for INTA, ... INTD (56 .. 59).  Except as constrained by board wiring,
+these values need not be honored.  For devices behind the LDT,
+non-default bindings of interrupts and their modes can be selected by
+programming the Sturgeon appropriately.
+
+
+
+'Issues in Writing or Converting Drivers: PCI Address Space'
+
+
+The current version of VxWorks supports only 32-bit (virtual)
+addresses.  The PCI memory, i/o and configuration spaces are all
+located above address 0x10000000 in the SB-1250 address map.  Thus
+they cannot be accessed from the CPU using unmapped 32-bit virtual
+addresses, i.e., addresses in kseg0 and kseg1.
+
+
+There are two alternatives for accessing the PCI address spaces:
+providing functions that dereference 64-bit addresses, or using
+pinned TLB entries that map those spaces into kuseg.
+
+
+The access routines are hs_read{8,16,32,64} and hs_write{8,16,32,64}, 
+which are defined in sb1.h and implemented by hs_rdwr.s.  Note 
+that these routines are normally embedded within macros, as shown in 
+the example code.  Since the physical addresses of the PCI spaces can 
+be represented in 32 bits, references to PCI space are typically 
+represented by 32-bit values and converted to 64 bits on the fly.
+
+
+Use of 64-bit virtual addresses is valid only if the KX bit in the
+CPU's CP0 Status register is set.  Because there are dynamic hazards in
+setting KX, this BSP is intended to run with KX permanently set (see
+BCM1250_SR in sb1.h).  As long as 32-bit addresses are properly
+sign-extended in the 64 bit registers (as automatically provided by
+nearly all MIPS instructions), setting the KX bit will be invisible to
+32-bit code.  To date, we have encountered no problems with running
+VxWorks in this mode.
+
+
+
+'Issues in Writing or Converting Drivers: Endian Considerations'
+
+
+For accesses to the PCI address spaces, the SB-1250 provides both
+"match byte lane" and "match bit lane" modes.  These are distinguished
+by a high-order bit in the address.  Choice of endian mode must be
+made by consideration of the particular device as well as the
+conventions used by the existing driver, if any.  Either mode, or a
+mix of modes, can be made to work, but careful analysis is necessary.
+
+
+The PCI configuration code uses only match-bits mode.
+
+
+'Deliverables'
+
+
+Wind River BSPs may be supplied with one or more of the following
+ROM-based pre-built projects: vxWorks_rom, vxWorks_romCompress and
+vxWorks_romResident. 
+
+Note, after building one the rom images it is best to do the following command
+sequence before loading the rom.
+\cs
+$ objcopymips -O binary vxWorks_romXXXXX vxWorks_romXXXXX.bin
+\ce
+
+Next, copy the vxWorks_romXXXXX.bin file to a suitable directory accessible from
+ the tftpserver. Then,
+from CFE, execute the following commands:
+\cs
+CFE> ifconfig -addr=10.10.1.17 eth0
+eth0: Link speed: 100BaseT HDX
+Device eth0:  hwaddr 00-02-4C-FE-08-7E, ipaddr 10.10.1.17, mask not set gateway
+not set, nameserver not set
+*** command status = 0
+CFE> flash -noheader -offset=0x200000 10.10.1.18:/vxWorks_romXXXXX.bin flash0
+Reading 10.10.1.18:/vxWorks_romXXXXX.bin: Done. 262384 bytes read
+\ce
+
+Note, the data bus to the flash device is 8 bits wide. This severely
+impacts the execution speed of ROM code. The vxWorks_romCompress
+image can take over 1 minute to completely boot, and the vxWorks_romResident
+image can take over 4 minutes.
+
+\sh Unsupported Features
+The following features of the Swarm board are not supported:
+
+
+Anything not listed above.
+
+\sh Known Problems
+The secondary cpu will not recover following a reboot of the primary
+cpu. Rebooting the secondary cpu will also reboot the primary cpu and
+both will recover properly.
+
+
+Multiple loads from the boot command line will cause the sbe interface to
+lock-up and the boot kernel to reset.
+
+\sh JUMPERS and SWITCHES
+The following jumpers and switches are relevant to VxWorks configuration.
+Consult the BCM912500A hardware manual for jumper and switch configuration details.
+Note that more than one jumper or switch may affect one configuration.
+
+\ts
+
+Broadcom Swarm/BCM912500A
+Jumper|Position|Description
+------------------------------
+J31|not installed| use on-board flash to boot, default
+J31|installed|     use PROM ICE to boot
+------------------------------
+\te
+
+
+
+If you wish to alter the board's configuration in some way, you should consult 
+the BCM912500A User's Manual.
+
+ 
+VxWorks images and VxWorks bootroms have been tested with the following
+jumper and switch setting configurations for the specific processors 
+for the board.
+
+\ts
+
+Broadcom Swarm/BCM912500A
+
+Jumper|Default Position
+------------------------------
+J1|         installed
+J2|         not installed
+SW2, J3|    SW2=2, J3 not installed (500MHz)
+J4|         not installed
+J5|         not installed 
+J6, J7|     nothing
+J63-J66|    nothing 
+SW8-SW8|    all 0
+J31|        not installed (boot on-board flash)
+------------------------------
+\te
+
+
+HARDWARE DETAILS
+This section documents the details of the device drivers and board
+hardware elements.
+
+\sh Serial Devices
+The Swarm board has two serial ports. Both ports have RS-232 9-pin D-type 
+male connectors. The default baud rate is 9600 baud, 8 data bits, no parity
+bit, 1 stop bit, no flow control.
+
+
+Uart0 has been configured as the console for the cpu0 kernel, and uart1 has
+been configured as the console for the cpu1 kernel.
+
+\sh Clocks/Timers
+The VxWorks system clocks for cpu0 and cpu1 are derived from the CP0
+count/compare registers using the mipsR4kTimer.c driver.
+
+
+The VxWorks auxiliary clocks for cpu0 and cpu1 are derived from the on-chip
+general timers 0 and 1 respectively..
+
+\sh Ethernet
+Two gigbit Ethernet interfaces on the Swarm board allows VxWorks to attach
+to a network.  The interface is called "sbe" and should be specified as
+the boot device to the boot ROMs. Both ports are RJ-45 connectors for use
+with CAT-5 twisted pair cables.
+
+
+MAC 0 has been assigned to the cpu0 kernel, and MAC 1 has been assigned
+to the cpu1 kernel.
+
+\sh ROM Configuration
+The Swarm board ships with CFE in the boot flash by default. A ROM
+in-circuit emulator can be connected to the 'PROM ICE' connector. J31
+will toggle the addresses of the on-board flash and the ICE connector
+so that the ICE can be used to as the boot flash.
+
+\sh PCI Bus
+66MHz PCI local bus (rev. 2.2 compliant): There are two 3.3V only, 32 bit 
+slots directly interfaced to the BCM12500. Each slot can handle master or 
+slave devices. Central arbitration is handled by the BCM12500.
+
+
+HT to HT and PCI Bridge: This device provides a bridge from the BCM12500 
+HT interface to two additional 64 bit 66MHz PCI slots and an HT socket.
+
+
+MEMORY MAP
+The Broadcom BCM912500A board has 512 Mbyte physical SDRAM. 32 Mbytes
+of physical memory is allocated for use by each core's kernel. The
+remainder is unallocated.
+
+\ts
+1 1 1 1 .
+
+Physical Memory Map
+
+Start|End|Size|Use
+------------------------------
+0x0.00000000| 0x0.01ffffff|   32M|     SDRAM Bank 1 (cpu0 kernel)
+0x0.02000000| 0x0.03ffffff|   32M|     SDRAM Bank 2 (cpu1 kernel)
+0x0.10000000| 0x0.1001ffff|  128K|     SCD registers, JTAG
+0x0.10020000| 0x0.10020fff|    4K|     SCD registers, reset config, ...
+0x0.10021000| 0x0.10021fff|    4K|     SCD registers, CPU0 mail box
+0x0.10022000| 0x0.10022fff|    4K|     SCD registers, CPU0 interrupt mapper
+0x0.10023000| 0x0.10023fff|    4K|     SCD registers, CPU1 mail box
+0x0.10040000| 0x0.1004ffff|   64K|     L2 registers
+0x0.10050000| 0x0.1005ffff|   64K|     Memory controller registers
+0x0.10060000| 0x0.100600ff| 0.25K|     SMBus/GPIO
+0x0.10060100| 0x0.100603ff| 0.75K|     Duart
+0x0.10061000| 0x0.10061fff|    4K|     Generic Bus config
+0x0.10064000| 0x0.10066fff|   12K|     MACs
+0x0.10090000| 0x0.3fffffff|  767M|     Generic/boot I/F
+0x0.100a0000| 0x0.100affff|   64K|     LED Display
+0x0.100b0000| 0x0.100bffff|   64K|     IDE Disk
+0x0.11000000| 0x0.13ffffff|   64M|     PCMCIA
+0x0.1f800000| 0x0.1f9fffff|    2M|     Alt. Boot Flash
+0x0.1fc00000| 0x0.1fdfffff|    2M|     Boot Flash
+0x0.40000000| 0x0.5fffffff|  512M|     PCI/LDT memory mapped I/O space, match byte lane
+0x0.60000000| 0x0.7fffffff|  512M|     PCI/LDT memory mapped I/O space, match bit lane
+0x0.d0000000| 0x0.d7ffffff|  128M|     L2 management mode space
+0x0.d8000000| 0x0.dfffffff|  128M|     PCI/LDT space, match byte lane
+0x0.f8000000| 0x0.ffffffff|  128M|     PCI/LDT space, match bit lane
+------------------------------
+\te
+
+BOARD LAYOUT
+The diagram below shows the location of connectors and devices
+relevant to VxWorks:
+\bs
+
+                              SWARM/BCM91250A Board
+
+                                                    Uart0(buttom)/Uart1(top)
+ _________________________________________________________________________
+|                                                            |______|     |
+|            PCI slots                                                    |
+|                                                             DIMM        |
+|          |   |   |   |                                   |  |  |  |     | 
+|          |   |   |   |     J1                            |  |  |  |     | 
+|          |   |   |   |     . .                           |  |  |  |     |  
+|          |   |   |   |                                   |  |  |  |     | 
+|          |   |   |   |             -----------           |  |  |  |     |         
+|          |   |   |   |            |           |          |  |  |  |     |
+|          |   |   |   |            |  BCM1250  |          |  |  |  |     |
+|          |   |                    |           |          |  |  |  |     |
+|  -----   |   |    Flash           |           |          |  |  |  |     |
+| |     |  |   |    ------           -----------                          |
+| |     |  |   |   |      |                                               |
+|  -----   |   |    ------                 RESET                          |
+|                   PROM ICE                __                            |
+|                   ------------           |  |                           |
+|                                     J31   --                            |
+|                                     :                                   |
+|                                                    Power                |  
+|                                                      |                  |
+|                                                      |                  |
+|                                                      |                  |
+|                          Eth1     Eth0               |                  |  
+|                           ---      ---                                  |
+|__________________________|   |____|   |_________________________________|
+                           |   |    |   |
+                            ---      ---
+\be
+
+BIBLIOGRAPHY
+\tb BCM1250 User's Manual 
+
+
+
